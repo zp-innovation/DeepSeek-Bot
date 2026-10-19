@@ -407,10 +407,10 @@ export function install(rt) {
         // still claims it as today, a later one only joins it.
         const opened = entry.opened === true
         if (entry.turn !== undefined && !bare(source)
-          && (source?.kind === 'user' || source?.kind === REPLY_KIND || source?.kind === 'schedule' || source?.kind === SOURCE_KIND)) {
+          && (source?.kind === 'user' || source?.kind === REPLY_KIND || source?.kind === 'schedule' || source?.kind === 'automation' || source?.kind === 'integration' || source?.kind === SOURCE_KIND)) {
           entry.opened = true
         }
-        if (entry.turn !== undefined && (source?.kind === 'user' || source?.kind === REPLY_KIND || source?.kind === SOURCE_KIND)) {
+        if (entry.turn !== undefined && (source?.kind === 'user' || source?.kind === REPLY_KIND || source?.kind === 'automation' || source?.kind === 'integration' || source?.kind === SOURCE_KIND)) {
           if (bare(source)) {
             if (entry.answers) break
           } else {
@@ -465,6 +465,13 @@ export function install(rt) {
         } else if (source?.kind === 'schedule' && rt.roomOf(id)) {
           // A group's scheduled task reaches the group as the user's message.
           queueRoomMessage(id, { text: reminderText(textOf(event.data.content)) })
+        } else if (source?.kind === 'automation' && rt.roomOf(id)) {
+          queueRoomMessage(id, { text: textOf(event.data.content) })
+        } else if (source?.kind === 'integration' && rt.roomOf(id)) {
+          queueRoomMessage(id, {
+            text: textOf(event.data.content),
+            ...(source.integration?.connectionId && source.integration?.deliveryKey ? { integration: { ...source.integration } } : {}),
+          })
         } else if (source?.kind === REFERENCE_KIND && rt.roomOf(id)) {
           attachReference(roomInbox.get(id), source, textOf(event.data.content))
         } else if (source?.kind === 'user' || source?.kind === REPLY_KIND) {

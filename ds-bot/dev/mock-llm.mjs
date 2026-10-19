@@ -27,6 +27,10 @@
 //   卡片 K (K×1000 characters, then a question card) · 笔记模式 截断一次|缺节一次|总截断|总缺节|失败|正常
 //   记住[@话题] 事实 · 团队记住 事实 (remember) · 忘掉 事实 (forget) · 回忆 [词] (recall)
 //   查能力 [词] (names the mcp__ tools and catalog skills that contain 词; also in a group)
+//   持久终端 设置 / 持久终端 读取 (checks that a Bot's shell keeps environment state)
+//   编码状态 / 执行状态 / 编码差异 / 创建隔离工作区 / 列出工作树 / 编码离开
+//   创建检查点 / 列出检查点 / 时间旅行 (checkpoint_create, checkpoint_list, time_travel)
+//   列出配方 / 运行配方 / 列出插件 (recipe_list, recipe_run, plugin_list)
 //   A message with a file (a long Bot message as a file, a file the user sent): the Bot
 //   reads the saved path, then says how many lines it read and how the file ends.
 // Memory panel: a summary restating the entries; asks 记住|remember X, 团队记住 X,
@@ -209,6 +213,15 @@ function decide(body) {
     if ((used?.name === 'bash' || used?.name === 'pwsh') && /DSH_SECRET_/.test(used.input?.command ?? '')) {
       return [text(`终端输出里我看到的是：${resultText.replace(/\s+/g, ' ').trim().slice(0, 200)}`)]
     }
+    if ((used?.name === 'bash' || used?.name === 'pwsh') && /DS_BOT_SMOKE_SESSION/.test(used.input?.command ?? '')) {
+      const setting = /persistent-ok/.test(used.input.command)
+      return [text(setting
+        ? '持久终端状态已设置。'
+        : resultText.includes('persistent-ok') ? '持久终端状态还在。' : `持久终端状态丢了：${resultText.slice(0, 160)}`)]
+    }
+    if ((used?.name === 'bash' || used?.name === 'pwsh') && /DS_BOT_RELEASE_CWD/.test(used.input?.command ?? '')) {
+      return [text('已离开仓库目录。')]
+    }
     if (used?.input?.justification === ESCALATION) return [text(result.is_error ? `没跑成：${resultText.slice(0, 80)}` : '命令跑完了，文件已经写好。')]
     const job = new RegExp(`^${HANDED_WORK}-(\\d+)-`).exec(used?.input?.pattern ?? '')
     if (job) return Object.assign([text(`干完了，用了 ${job[1]} 秒。`)], { delay: Number(job[1]) * 1000 })
@@ -250,6 +263,23 @@ function decide(body) {
         return [text(`我私聊里聊过 ${hits.length} 条${loose}：${hits.at(-1)?.slice(0, 120) ?? ''}${across}`)]
       }
       case 'read_group_chat': return [text(`群里最近：\n${resultText}`)]
+      case 'repo_status': return [text(`仓库状态：\n${resultText.slice(0, 1_000)}`)]
+      case 'execution_status': return [text(`执行状态：${resultText.replace(/\s+/g, ' ').slice(0, 180)}`)]
+      case 'repo_diff': {
+        const diff = resultText.split('\n').filter(line => !line.startsWith('warning:')).join('\n')
+        return [text(`仓库差异：\n${diff.slice(0, 1_500)}`)]
+      }
+      case 'create_worktree': return [text(`工作树已创建：\n${resultText.slice(0, 1_000)}`)]
+      case 'list_worktrees': {
+        const branches = [...resultText.matchAll(/^branch refs\/heads\/(.+)$/gm)].map(match => match[1])
+        return [text(`工作树列表：${branches.join(', ') || '(none)'}`)]
+      }
+      case 'checkpoint_create': return [text(`检查点：${resultText.replace(/\s+/g, ' ').slice(0, 240)}`)]
+      case 'checkpoint_list': return [text(`检查点列表：${resultText.replace(/\s+/g, ' ').slice(0, 240)}`)]
+      case 'time_travel': return [text(`时间旅行：${resultText.replace(/\s+/g, ' ').slice(0, 240)}`)]
+      case 'recipe_list': return [text(`配方列表：${resultText.replace(/\s+/g, ' ').slice(0, 300)}`)]
+      case 'recipe_run': return [text(`配方：${resultText.replace(/\s+/g, ' ').slice(0, 500)}`)]
+      case 'plugin_list': return [text(`插件：${resultText.replace(/\s+/g, ' ').slice(0, 500)}`)]
       case 'read': {
         const content = resultText.replace(/<[^>]+>/g, '').replace(/^\s*\d+[\t→|:]/gm, '').trim()
         return [text(result.is_error ? `附件没读成：${resultText.slice(0, 200)}` : `读了附件（${content.length} 字），结尾是「${content.slice(-24)}」。`)]
@@ -269,6 +299,45 @@ function decide(body) {
   }
 
   const userText = textOf(last?.content).trim()
+  const shell = ['pwsh', 'bash'].find(name => tools.has(name))
+  if (shell !== undefined && /^持久终端 设置$/.test(userText)) {
+    return [tool(shell, {
+      command: shell === 'pwsh'
+        ? "$env:DS_BOT_SMOKE_SESSION = 'persistent-ok'"
+        : "export DS_BOT_SMOKE_SESSION='persistent-ok'",
+    })]
+  }
+  if (shell !== undefined && /^持久终端 读取$/.test(userText)) {
+    return [tool(shell, {
+      command: shell === 'pwsh' ? '$env:DS_BOT_SMOKE_SESSION' : 'printf \'%s\\n\' "$DS_BOT_SMOKE_SESSION"',
+    })]
+  }
+  if (tools.has('repo_status') && /^编码状态$/.test(userText)) return [tool('repo_status', {})]
+  if (tools.has('execution_status') && /^执行状态$/.test(userText)) return [tool('execution_status', {})]
+  if (tools.has('repo_diff') && /^编码差异$/.test(userText)) return [tool('repo_diff', { scope: 'unstaged' })]
+  if (tools.has('create_worktree') && /^创建隔离工作区$/.test(userText)) {
+    return [tool('create_worktree', { name: 'smoke-worktree' })]
+  }
+  if (tools.has('list_worktrees') && /^列出工作树$/.test(userText)) return [tool('list_worktrees', {})]
+  if (tools.has('checkpoint_create') && /^创建检查点$/.test(userText)) {
+    return [tool('checkpoint_create', { label: 'smoke-checkpoint' })]
+  }
+  if (tools.has('checkpoint_list') && /^列出检查点$/.test(userText)) return [tool('checkpoint_list', {})]
+  if (tools.has('time_travel') && /^时间旅行$/.test(userText)) {
+    return [tool('time_travel', { checkpoint: 'smoke-checkpoint' })]
+  }
+  if (tools.has('recipe_list') && /^列出配方$/.test(userText)) return [tool('recipe_list', {})]
+  if (tools.has('recipe_run') && /^运行配方$/.test(userText)) {
+    return [tool('recipe_run', { name: 'smoke-recipe', values: { target: 'README' } })]
+  }
+  if (tools.has('plugin_list') && /^列出插件$/.test(userText)) return [tool('plugin_list', {})]
+  if (shell !== undefined && /^编码离开$/.test(userText)) {
+    return [tool(shell, {
+      command: shell === 'pwsh'
+        ? 'Write-Output DS_BOT_RELEASE_CWD; exit'
+        : 'echo DS_BOT_RELEASE_CWD; exit',
+    })]
+  }
   // "撑爆": the provider rejects the request as past its window.
   if (userText.startsWith('撑爆')) return 'overflow'
   // A file in the message (a long Bot message, a file the user sent): DSH gives its saved
@@ -359,7 +428,6 @@ function decide(body) {
       return [text(brief ? `简报最后一句：${brief.split('\n').at(-1)}` : '没有简报。')]
     }
     if (/写成文字/.test(userLine) && !leads) return [text(WRITTEN_CALL)]
-    const shell = ['pwsh', 'bash'].find(name => tools.has(name))
     if (/提权/.test(userLine) && !leads && shell) {
       return [text('这一步要写工作区外的文件，我申请一次提权。'), tool(shell, { command: 'echo ok', description: '在工作区外写一个测试文件', justification: ESCALATION, sandbox_permissions: 'danger-full-access' })]
     }

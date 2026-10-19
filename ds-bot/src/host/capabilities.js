@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto'
+import { parse as parseYaml } from 'yaml'
 import { encodeUrlComponent } from './secrets.js'
 
 const MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 const SECRET_REFERENCE = /\$DSH_SECRET_([A-Z][A-Z0-9_]*)/g
 const ENSURE_TIMEOUT_MS = 15_000
+const SKILL_CONTENT_MAX = 50_000
+const SKILL_METADATA_MAX = 8_000
+const WHEN_TO_USE_MAX = 4_000
 
 export function validateCapabilityName(value) {
   const name = String(value ?? '').trim()
@@ -45,6 +49,118 @@ const stringMap = (value, label) => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)
     || Object.values(value).some(item => typeof item !== 'string')) throw new Error(`${label} must contain text values.`)
   return Object.fromEntries(Object.entries(value))
+}
+
+const plainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+const optionalText = (value, label, max) => {
+  if (value === undefined || value === null || value === '') return undefined
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`)
+  const text = value.trim()
+  if (text.length > max) throw new Error(`${label} is longer than ${max} characters.`)
+  return text || undefined
+}
+const frontmatterBoolean = (data, key) => {
+  if (!Object.hasOwn(data, key)) return undefined
+  const value = data[key]
+  if (value === true || value === 1 || value === '1') return true
+  if (value === false || value === 0 || value === '0') return false
+  if (typeof value === 'string') {
+    if (['true', 'yes', 'on'].includes(value.toLowerCase())) return true
+    if (['false', 'no', 'off'].includes(value.toLowerCase())) return false
+  }
+  throw new Error(`SKILL.md "${key}" must be a boolean.`)
+}
+const splitFrontmatter = (raw) => {
+  const firstLineEnd = raw.indexOf('\n')
+  if (firstLineEnd < 0 || raw.slice(0, firstLineEnd).replace(/\r$/, '') !== '---') return undefined
+  let lineStart = firstLineEnd + 1
+  while (lineStart <= raw.length) {
+    const nextNewline = raw.indexOf('\n', lineStart)
+    const lineEnd = nextNewline < 0 ? raw.length : nextNewline
+    const line = raw.slice(lineStart, lineEnd).replace(/\r$/, '')
+    if (line === '---') {
+      return {
+        yaml: raw.slice(firstLineEnd + 1, lineStart),
+        body: raw.slice(nextNewline < 0 ? raw.length : nextNewline + 1).trim(),
+      }
+    }
+    if (nextNewline < 0) break
+    lineStart = nextNewline + 1
+  }
+  throw new Error('SKILL.md frontmatter is missing its closing "---".')
+}
+const cleanMetadata = (value) => {
+  if (value === undefined) return undefined
+  if (!plainObject(value)) throw new Error('SKILL.md metadata must be a YAML object.')
+  let encoded
+  try { encoded = JSON.stringify(value) } catch { throw new Error('SKILL.md metadata must contain JSON-compatible values.') }
+  if (encoded.length > SKILL_METADATA_MAX) throw new Error(`SKILL.md metadata is longer than ${SKILL_METADATA_MAX} characters.`)
+  return JSON.parse(encoded)
+}
+const invocationFromSkill = (data) => {
+  for (const [legacy, canonical] of [
+    ['disableModelInvocation', 'disable-model-invocation'],
+    ['modelInvocable', 'disable-model-invocation'],
+    ['userInvocable', 'user-invocable'],
+  ]) {
+    if (Object.hasOwn(data, legacy)) throw new Error(`SKILL.md "${legacy}" is unsupported; use "${canonical}".`)
+  }
+  return {
+    modelInvocable: frontmatterBoolean(data, 'disable-model-invocation') !== true,
+    userInvocable: frontmatterBoolean(data, 'user-invocable') !== false,
+  }
+}
+const invocationFromBody = (value) => {
+  if (value === undefined) return { modelInvocable: true, userInvocable: true }
+  if (!plainObject(value)) throw new Error('Skill invocation must be an object.')
+  const check = key => {
+    if (value[key] !== undefined && typeof value[key] !== 'boolean') throw new Error(`Skill invocation ${key} must be true or false.`)
+  }
+  check('modelInvocable')
+  check('userInvocable')
+  return {
+    modelInvocable: value.modelInvocable !== false,
+    userInvocable: value.userInvocable !== false,
+  }
+}
+
+export function parseSkillDefinition(body) {
+  const name = validateCapabilityName(body.name)
+  if (typeof body.content !== 'string') throw new Error('Enter SKILL.md content or skill instructions.')
+  const raw = body.content.replace(/^\uFEFF/, '').trim()
+  if (raw === '') throw new Error('Enter SKILL.md content or skill instructions.')
+  if (raw.length > SKILL_CONTENT_MAX) throw new Error(`Skill content is longer than ${SKILL_CONTENT_MAX} characters.`)
+  const document = splitFrontmatter(raw)
+  if (document === undefined) {
+    const description = optionalText(body.description, 'Skill description', 2_000)
+    if (description === undefined) throw new Error('Enter a skill description.')
+    return {
+      content: raw,
+      description,
+      whenToUse: optionalText(body.whenToUse, 'When to use', WHEN_TO_USE_MAX),
+      invocation: invocationFromBody(body.invocation),
+      metadata: cleanMetadata(body.metadata),
+    }
+  }
+  let data
+  try { data = parseYaml(document.yaml) } catch (error) {
+    throw new Error(`SKILL.md frontmatter is not valid YAML: ${error?.message ?? error}`)
+  }
+  if (!plainObject(data)) throw new Error('SKILL.md frontmatter must be a YAML object.')
+  const declaredName = optionalText(data.name, 'SKILL.md name', 32)
+  if (declaredName === undefined) throw new Error('SKILL.md frontmatter requires a name.')
+  validateCapabilityName(declaredName)
+  if (declaredName !== name) throw new Error(`SKILL.md name "${declaredName}" must match capability name "${name}".`)
+  const description = optionalText(data.description, 'SKILL.md description', 2_000)
+  if (description === undefined) throw new Error('SKILL.md frontmatter requires a description.')
+  if (document.body === '') throw new Error('SKILL.md needs instructions after its frontmatter.')
+  return {
+    content: document.body,
+    description,
+    whenToUse: optionalText(data.whenToUse, 'SKILL.md whenToUse', WHEN_TO_USE_MAX),
+    invocation: invocationFromSkill(data),
+    metadata: cleanMetadata(data.metadata),
+  }
 }
 
 export function install(rt) {
@@ -117,7 +233,14 @@ export function install(rt) {
         Object.assign(item, { transport, url, headers: stringMap(body.headers, 'Headers'), approved: true })
       }
     } else if (kind === 'skill') {
-      item.content = String(body.content ?? '').trim()
+      const skill = parseSkillDefinition({ ...body, name })
+      Object.assign(item, {
+        description: skill.description,
+        content: skill.content,
+        invocation: skill.invocation,
+        ...(skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse }),
+        ...(skill.metadata === undefined ? {} : { metadata: skill.metadata }),
+      })
     } else {
       const names = [...new Set(strings(body.items))]
       for (const childName of names) {
@@ -234,6 +357,8 @@ export function install(rt) {
     ...(item.env ? { env: { ...item.env } } : {}),
     ...(item.headers ? { headers: { ...item.headers } } : {}),
     ...(item.items ? { items: [...item.items] } : {}),
+    ...(item.invocation ? { invocation: { ...item.invocation } } : {}),
+    ...(item.metadata ? { metadata: JSON.parse(JSON.stringify(item.metadata)) } : {}),
   }))
 
   async function loadMcpPlugin() {
@@ -261,7 +386,14 @@ export function install(rt) {
   }
   const resolveUrl = (url, botId) => String(url).replace(SECRET_REFERENCE, (_match, name) => encodeUrlComponent(secretFor(name, botId)))
   const configFor = (item, botId) => {
-    if (item.kind === 'skill') return { name: item.name, description: item.description, content: item.content }
+    if (item.kind === 'skill') return {
+      name: item.name,
+      description: item.description,
+      content: item.content,
+      invocation: item.invocation ?? { modelInvocable: true, userInvocable: true },
+      ...(item.whenToUse === undefined ? {} : { whenToUse: item.whenToUse }),
+      ...(item.metadata === undefined ? {} : { metadata: item.metadata }),
+    }
     if (item.transport === 'stdio') return { transport: 'stdio', serverName: item.name, command: item.command, args: item.args ?? [], env: resolveValues(item.env, botId), failOnStartupError: true }
     return { transport: 'streamable-http', serverName: item.name, url: resolveUrl(item.url, botId), headers: resolveValues(item.headers, botId), failOnStartupError: true }
   }
@@ -298,7 +430,16 @@ export function install(rt) {
           name: `ds-bot-capability-skill-${name}`,
           inject: ['skills'],
           apply(c) {
-            c.effect(() => c.skills.register({ name: config.name, description: config.description, source: 'runtime', content: config.content }))
+            c.effect(() => c.skills.register({
+              name: config.name,
+              description: config.description,
+              source: 'runtime',
+              provider: 'ds-bot-shared',
+              content: config.content,
+              invocation: config.invocation,
+              ...(config.whenToUse === undefined ? {} : { whenToUse: config.whenToUse }),
+              ...(config.metadata === undefined ? {} : { metadata: config.metadata }),
+            }))
           },
         }
         : await loadMcpPlugin()
@@ -414,6 +555,22 @@ export function install(rt) {
     trackAgent(agent)
     await prepare(agent, sessionId)
   }
+  // Evaluation Sessions are ordinary DSH Sessions outside the team index. They need
+  // the target Bot's skill-only capability set without exposing MCP write tools.
+  async function prepareCapabilitiesForEval(agent, bot) {
+    await loadInputs()
+    trackAgent(agent)
+    const items = library()
+    const skills = new Set()
+    for (const name of bot.capabilities ?? []) {
+      const item = items[name]
+      if (item?.kind === 'skill') skills.add(name)
+      else if (item?.kind === 'pack') {
+        for (const child of item.items ?? []) if (items[child]?.kind === 'skill') skills.add(child)
+      }
+    }
+    await reconcileAgent(agent, { ...bot, capabilities: [...skills] })
+  }
   const trackAgent = agent => {
     const sessionId = agent?.session?.id
     if (typeof sessionId !== 'string' || !agent.ctx) return
@@ -516,7 +673,7 @@ export function install(rt) {
     capabilityStatusesView,
     reconcileCapabilities: reconcile,
     scheduleCapabilitiesReconcile: scheduleReconcile,
-    ensureCapabilities,
+    ensureCapabilities, prepareCapabilitiesForEval,
     expandCapabilities: names => expandCapabilityNames(names, library()),
     changeCapabilityAttachment: changeAttachment,
   })

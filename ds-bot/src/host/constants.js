@@ -66,8 +66,20 @@ export const TEAM_TOOLS = [
   'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user',
   'request_secret', 'list_secrets', 'group_relay', 'read_own_chat',
   'read_group_chat', 'remember', 'forget', 'recall', 'read_browser',
+  'repo_status', 'repo_diff', 'git_commit', 'git_push', 'pull_request',
+  'execution_status',
+  'create_worktree', 'list_worktrees',
+  'checkpoint_create', 'checkpoint_list', 'time_travel',
   'list_capabilities', 'save_capability', 'delete_capability',
   'attach_capability', 'detach_capability',
+  'recipe_list', 'recipe_run', 'save_recipe', 'delete_recipe',
+  'attach_recipe', 'detach_recipe', 'plugin_list',
+  'automation_list', 'schedule_task_create', 'schedule_task_update',
+  'schedule_task_delete', 'schedule_task_history',
+  'automation_rule_create', 'automation_rule_update', 'automation_rule_delete',
+  'integration_list',
+  'observability_overview',
+  'eval_list',
 ]
 // Answers a group gives to what members post after the round moved on (their finished
 // work, mostly), before the user speaks there again.

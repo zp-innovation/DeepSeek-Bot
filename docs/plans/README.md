@@ -44,3 +44,10 @@
 | [Bot 运行配置](2026-10-10-bot-runtime.md) | Agent 预设、每个 Bot 的模型和思考强度、工作文件夹、能力（MCP、技能、能力包） |
 | [长消息](2026-10-16-long-messages.md) | state.json 只存开头；超过 2 万字的 Bot 消息转成 DSH 文件；成员和界面怎么读全文 |
 | [Bot 之间派活](2026-10-16-bot-handoffs.md) | Bot 看得到对方的状态；没读的消息合成一条；派活树：下面的活交回后才往上交，不许发给在等结果的 Bot；不设总量和链长上限 |
+| [Codex 级编码](2026-10-19-codex-grade-coding.md) | 单 Agent 编码闭环、仓库检查、diff、commit/push/PR、持久终端和专用编码 preset |
+| [沙箱、远程执行与多后端](2026-10-19-execution-backends.md) | 执行状态、本地 sandbox、Git worktree 后端，以及 DSH profile 级 SSH 的边界 |
+| [检查点、恢复与时间旅行](2026-10-19-checkpoints-time-travel.md) | 自动/命名检查点、DSH Session fork 时间旅行、分支保留和文件不回滚边界 |
+| [Skills、Recipes 与 Plugins](2026-10-19-skills-recipes-plugins.md) | 完整 SKILL.md、参数化任务配方、只读 profile 插件清单与权限边界 |
+| [定时任务与事件自动化](2026-10-19-automation-schedules-events.md) | DSH schedule 全量管理、幂等换段、事件触发模板、去重冷却和运行观测 |
+| [Slack、GitHub 与 IM 入站集成](2026-10-19-slack-github-im-integrations.md) | 签名 Webhook、幂等收据、Bot/群聊路由、Slack 线程回复和通用 IM 出站 |
+| [可观测性与场景评测](2026-10-19-observability-evaluation.md) | Turn/Model/Tool/Approval 轨迹、阈值告警、JSON 导出、只读隔离评测和回归对比 |

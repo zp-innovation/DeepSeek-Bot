@@ -17,6 +17,7 @@
 import { randomUUID } from 'node:crypto'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { HANDOFF_ACK, HISTORY_TIMEOUT_MS, REPLY_KIND, SOURCE_KIND } from './constants.js'
+import { within } from './folders.js'
 import { CHECKPOINT_PROMPT, STEWARD_SYSTEM, checkpointCount, checkpointTail, checkpointTailNote, checkpointText, linesFor, parseDecision, stewardRequest } from './steward.js'
 import { clip, createClock, escapeRegExp, estimateTokens, splitRef, textOf } from './text.js'
 
@@ -99,6 +100,12 @@ export function historyEntry(event, group) {
   const source = event.data?.source
   if (event.type === 'user/message' && source?.kind === REPLY_KIND) {
     return { answer: false, who: 'user', text: replyText(textOf(event.data.content)), keepAnswers: true }
+  }
+  if (event.type === 'user/message' && source?.kind === 'automation') {
+    return { answer: false, who: 'user', text: textOf(event.data.content), keepAnswers: true }
+  }
+  if (event.type === 'user/message' && source?.kind === 'integration') {
+    return { answer: false, who: 'user', text: textOf(event.data.content), keepAnswers: true }
   }
   if (event.type !== 'user/message' || (source?.kind !== 'user' && source?.kind !== SOURCE_KIND)) return undefined
   const text = textOf(event.data.content)
@@ -776,7 +783,12 @@ export function install(rt) {
       : { fallback: whole ? 'whole' : job.failed !== undefined ? 'failure' : job.overflow ? 'overflow' : 'failed', ...(previous?.note ? { note: previous.note, noteFrom: previous.noteFrom ?? previous.number } : {}) }
     carried ??= await readLines()
     if (signal.aborted) throw signal.reason
-    const dir = rt.workDirOf(job)
+    const base = rt.workDirOf(job)
+    const baseFolder = base !== undefined && await rt.isFolder(base) ? base : rt.teamFolder()
+    const currentFolder = ctx.get?.('workingDirectory')?.get?.(session) ?? session.header?.cwd
+    const keepCurrent = currentFolder !== undefined && baseFolder !== undefined && currentFolder !== baseFolder
+      && within(currentFolder, baseFolder) && await rt.isFolder(currentFolder)
+    const dir = keepCurrent ? currentFolder : base
     const intended = dir !== undefined && await rt.isFolder(dir) ? dir : rt.teamFolder()
     const freshId = await rt.createSession(room ? `${bot.name} · ${room.name}` : bot.name, { dir })
     const picked = await freshRoute(bot, session)
@@ -1050,6 +1062,15 @@ export function install(rt) {
       } else if (source?.kind === REPLY_KIND) {
         const reply = readReply(textOf(event.data.content))
         if (reply !== undefined) items.push({ kind: 'answer', questions: reply.questions, answers: reply.answers, time: event.time })
+      } else if (source?.kind === 'integration') {
+        items.push({
+          kind: 'integration',
+          provider: source.provider,
+          name: source.connectionName,
+          event: source.event,
+          summary: source.summary,
+          time: event.time,
+        })
       } else if (source?.kind === SOURCE_KIND && source.handoff !== true && source.deferred !== true && ['request', 'reply', 'report', 'stopped'].includes(source.role)) {
         items.push({ kind: 'event', role: source.role, botId: source.senderSessionId ?? null, name: source.senderName ?? null, roomId: source.roomId ?? null, time: event.time })
       }

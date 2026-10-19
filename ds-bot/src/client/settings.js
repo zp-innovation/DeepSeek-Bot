@@ -2,7 +2,7 @@ import { createElement as h, useCallback, useEffect, useRef, useState } from 're
 import { ACCENT_INKS, INKS } from './inks.js'
 import { isMainOf } from './sources.js'
 import { allThemes } from './themes.js'
-import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, SETTINGS_ICONS } from './icons.js'
+import { CloseIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ConnectorIcon, EvalIcon, InfoIcon, PlugIcon, PlusIcon, SlidersIcon, StarLineIcon, TraceIcon, SETTINGS_ICONS } from './icons.js'
 import { AdminStar, BotAvatar, RoomAvatar } from './mark.js'
 import { openHarnessSettings } from './sidebar.js'
 import { useEscape } from './overlay-hooks.js'
@@ -14,7 +14,10 @@ import { KeyIcon, SecretsPage } from './secret-card.js'
 import { UsagePage } from './usage-page.js'
 import { ConnectorsPage } from './connectors.js'
 import { CapabilitiesPage } from './capability-settings.js'
+import { PluginsPage } from './plugins.js'
 import { SchedulesPage } from './schedules.js'
+import { ObservabilityPage } from './observability.js'
+import { EvaluationPage } from './evaluation.js'
 import { FeedbackIcon, FeedbackPage } from './feedback.js'
 import { AboutPage } from './about.js'
 import { t } from './i18n.js'
@@ -23,8 +26,8 @@ const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
 // Settings dialog: a 198px page list beside the page. Bots and group chats each list
 // their members, and one opens on its own settings form. Usage widens the dialog.
-const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['schedules', 'Scheduled tasks'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About DS Bot']]
-const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, capabilities: PlugIcon, schedules: ClockIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
+const SETTINGS_PAGES = [['general', 'General'], ['bots', 'Bots'], ['groups', 'Group chats'], ['connectors', 'Connectors'], ['capabilities', 'Capabilities'], ['plugins', 'Plugins'], ['schedules', 'Automations'], ['observability', 'Observability'], ['evaluation', 'Evaluation'], ['usage', 'Usage'], ['secrets', 'Secrets'], ['feedback', 'Feedback'], ['about', 'About DS Bot']]
+const PAGE_ICONS = { ...SETTINGS_ICONS, connectors: ConnectorIcon, capabilities: StarLineIcon, plugins: PlugIcon, schedules: ClockIcon, observability: TraceIcon, evaluation: EvalIcon, secrets: KeyIcon, feedback: FeedbackIcon, about: InfoIcon }
 
 function SetSection({ title, children }) {
   return h('section', { className: 'bt-set-section' }, h('h3', null, title), h('div', { className: 'bt-set-card' }, children))
@@ -164,6 +167,12 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
   const label = t(SETTINGS_PAGES.find(([key]) => key === shown)[1])
   const back = bot ? t('Back to Bots') : room ? t('Back to group chats') : usageFocus ? t('All usage') : null
   const nav = useGlide(shown, { axis: 'y' })
+  useEffect(() => {
+    const box = nav.box.current
+    const item = box?.querySelector('.bt-settings-item[aria-current="page"]')
+    if (!box || !item || box.scrollWidth <= box.clientWidth) return
+    box.scrollTo({ left: Math.max(0, item.offsetLeft - (box.clientWidth - item.offsetWidth) / 2), behavior: 'auto' })
+  }, [shown, nav.box])
   // A page enters from the right when it is one level in, from the left when it comes
   // back out, and from below beside it. Usage keeps its own entrance and its data
   // across its own levels, so they share one page.
@@ -204,7 +213,10 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
           shown === 'groups' && !room ? h(GroupsPage, { roster, actions, run }) : null,
           shown === 'connectors' ? h(ConnectorsPage, { roster, actions }) : null,
           shown === 'capabilities' ? h(CapabilitiesPage, { roster, actions, run }) : null,
+          shown === 'plugins' ? h(PluginsPage, { roster, actions, run }) : null,
           shown === 'schedules' ? h(SchedulesPage, { roster, actions, start: id ?? undefined }) : null,
+          shown === 'observability' ? h(ObservabilityPage, { roster, actions, run }) : null,
+          shown === 'evaluation' ? h(EvaluationPage, { roster, actions, run }) : null,
           shown === 'secrets' ? h(SecretsPage, { roster, actions, run, Section: SetSection }) : null,
           shown === 'feedback' ? h(FeedbackPage, { actions, run, Section: SetSection, Row: SetRow }) : null,
           shown === 'about' ? h(AboutPage, { useUpdate, actions, run, Section: SetSection, Row: SetRow }) : null),

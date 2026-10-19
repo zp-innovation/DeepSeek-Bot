@@ -29,16 +29,35 @@ export function install(rt) {
       at: Date.now(),
     }
     pending.set(id, entry)
+    rt.observabilityApprovalStarted?.(entry)
     rt.noteApproval?.(sessionId, { tool: entry.tool, reason: entry.reason.slice(0, 200) })
+    void rt.automationEvent?.({
+      kind: 'approval_requested',
+      sessionId,
+      sourceBotId: botId,
+      roomId: owner?.roomId,
+      text: [entry.tool, entry.reason].filter(Boolean).join(': '),
+      status: 'waiting',
+      eventKey: `approval:${id}`,
+    })
     const settled = () => {
       pending.delete(id)
       rt.noteApproval?.(sessionId, undefined)
     }
-    if (owner === undefined) return Promise.resolve(next()).finally(settled)
+    if (owner === undefined) {
+      return Promise.resolve(next()).then((outcome) => {
+        rt.observabilityApprovalFinished?.(id, typeof outcome === 'string' ? outcome : 'answered')
+        return outcome
+      }, (error) => {
+        rt.observabilityApprovalFinished?.(id, 'failed')
+        throw error
+      }).finally(settled)
+    }
     rt.yieldRoomTurn?.(sessionId)
     return new Promise((resolve) => {
       entry.answer = (outcome) => {
         if (!pending.has(id)) return
+        rt.observabilityApprovalFinished?.(id, outcome)
         settled()
         resolve(outcome)
       }

@@ -39,6 +39,9 @@
     "README.md",
     "LICENSE"
   ],
+  "dependencies": {
+    "yaml": "2.8.1"
+  },
   "scripts": {
     "build": "node scripts/build-client.mjs",
     "test": "node --import ./test/harness-resolve.mjs --test \"test/*.test.js\"",

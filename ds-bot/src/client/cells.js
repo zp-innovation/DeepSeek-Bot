@@ -232,6 +232,13 @@ function GroupEvent({ prefix, room, name, roster, actions }) {
       : name ? h('span', null, name) : null)
 }
 
+function IntegrationEvent({ provider, name, event, summary }) {
+  const label = [provider, event].filter(Boolean).join(' · ')
+  return h('div', { className: 'bt-event bt-integration-event', title: summary ?? '' },
+    h('span', { className: 'bt-event-name' }, t('Integration: {name}', { name: name ?? provider ?? t('external service') })),
+    label ? h('span', null, label) : null)
+}
+
 // A change remember or forget made, which opens the memory it changed. Refusals and
 // entries already saved changed nothing and show no line.
 function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
@@ -331,6 +338,7 @@ function EarlierParts({ sessionId, roster, actions }) {
         case 'user': return h(EarlierUser, { key, row })
         case 'answer': return h(AnsweredCell, { key, node: { data: row } })
         case 'bot': return h(Bubbles, { key, texts: row.texts, roster, selfId, actions, fold: FOLD_HUGE })
+        case 'integration': return h(IntegrationEvent, { key, ...row })
         case 'event': {
           if (row.role === 'report') return h(GroupEvent, { key, prefix: t('Replies from'), room: roster.roomsById[row.roomId], name: t('a group chat'), roster, actions })
           const other = roster.byId[row.botId] ?? { id: row.botId, name: row.name ?? t('a Bot'), color: 'gray' }
@@ -434,6 +442,20 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
     if (source.kind === 'schedule') {
       const prompts = reminderPrompts(contentText(data.content))
       return h('div', { className: 'bt-event' }, prompts.length > 0 ? t('Scheduled task: {text}', { text: prompts.join(' · ').slice(0, 80) }) : t('Routine started'))
+    }
+    if (source.kind === 'automation') {
+      return h('div', {
+        className: 'bt-event',
+        title: contentText(data.content).slice(0, 300),
+      }, t('Automation: {name}', { name: source.ruleName ?? source.eventKind ?? t('event') }))
+    }
+    if (source.kind === 'integration') {
+      return h(IntegrationEvent, {
+        provider: source.provider,
+        name: source.connectionName,
+        event: source.event,
+        summary: source.summary,
+      })
     }
     if (source.kind === 'user-question-reply' || source.kind === 'goal') return null
     return h('div', { className: 'bt-event' }, contentText(data.content).slice(0, 80) || t('Update'))
@@ -556,6 +578,17 @@ function toolActivity(name, arg, findBot, self) {
     case 'list_secrets': return { label: t('Checking the keys'), state: 'searching' }
     case 'ask_user_question': return { label: t('Waiting for your answer'), state: 'alert' }
     case 'group_relay': return { relay: true, state: 'orbit' }
+    case 'repo_status':
+    case 'repo_diff': return { label: t('Looking through files'), state: 'searching' }
+    case 'execution_status': return { label: t('Checking isolation'), state: 'searching' }
+    case 'list_worktrees': return { label: t('Looking through files'), state: 'searching' }
+    case 'create_worktree': return { label: t('Writing changes'), state: 'sending' }
+    case 'checkpoint_create': return { label: t('Saving a checkpoint'), state: 'working' }
+    case 'checkpoint_list': return { label: t('Looking back through the chat'), state: 'searching' }
+    case 'time_travel': return { label: t('Opening an earlier branch'), state: 'sending' }
+    case 'git_commit':
+    case 'git_push':
+    case 'pull_request': return { label: t('Writing changes'), state: 'sending' }
     case 'message_bot': {
       const target = findBot(arg('to'))
       return { label: target ? t('Asking {name}', { name: target.name }) : t('Asking another Bot'), state: 'sending' }

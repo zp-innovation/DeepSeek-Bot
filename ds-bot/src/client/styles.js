@@ -508,6 +508,49 @@ button.bt-set-row:hover{background:var(--bt-hover)}
 .bt-connector-form-row{display:flex;align-items:center;gap:6px}
 .bt-connector-link{flex:1;font-size:12px;color:var(--bt-ink-2)}
 .bt-connector-error{padding-left:48px;font-size:12px;line-height:16px;color:var(--bt-danger)}
+.bt-skill-policy{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bt-check{display:inline-flex;align-items:center;gap:6px;min-height:28px;font-size:12px;line-height:16px;color:var(--bt-ink-2);cursor:pointer}
+.bt-check input{accent-color:var(--bt-ink);margin:0}
+.bt-recipe-form{padding-left:0}
+.bt-recipe-inputs{display:flex;flex-direction:column;gap:8px;padding-top:4px}
+.bt-recipe-inputs-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12px;line-height:16px;font-weight:600}
+.bt-recipe-input-row{display:grid;grid-template-columns:minmax(110px,.8fr) minmax(150px,1.3fr) minmax(110px,.9fr) auto 28px;align-items:center;gap:6px}
+.bt-recipe-required{white-space:nowrap}
+.bt-recipe-remove{width:28px;height:28px;color:var(--bt-ink-3)}
+.bt-recipe-remove:hover{color:var(--bt-danger)}
+.bt-plugin-tags{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex-wrap:wrap;max-width:190px}
+.bt-plugin-scope{padding:0 4px}
+@media (max-width:760px){
+  .bt-recipe-input-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .bt-recipe-required{min-height:32px}
+  .bt-recipe-remove{justify-self:end}
+  .bt-plugin-tags{max-width:110px}
+}
+@media (max-width:760px){
+  .bt-settings-layer{align-items:stretch;justify-content:stretch}
+  .bt-settings{--bt-set-w:100%;--bt-set-h:100%;width:100%;height:100%;border:0;border-radius:0;flex-direction:column}
+  .bt-settings-nav{width:100%;height:auto;flex:none;flex-direction:row;gap:4px;padding:8px 52px 8px 8px;border-right:0;border-bottom:.5px solid var(--bt-line);overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .bt-settings-nav::-webkit-scrollbar{display:none}
+  .bt-settings-nav>.bt-thumb{display:none}
+  .bt-settings-nav[data-glide] .bt-settings-item[aria-current=page]{background:var(--bt-active)}
+  .bt-settings-item{flex:none;min-height:44px;padding:10px 12px;white-space:nowrap}
+  .bt-settings-shell{margin-top:0;margin-left:auto}
+  .bt-settings-main{width:100%;height:auto;min-height:0;flex:1}
+  .bt-settings-head{padding:12px 52px 4px 16px}
+  .bt-settings-scroll{padding:12px 16px 24px}
+  .bt-settings-close{top:68px;right:12px;width:40px;height:40px;z-index:2}
+  .bt-settings-usage{left:0;width:100%}
+  .bt-settings-usage[data-off]{left:0;width:100%}
+  .bt-connector-form,.bt-connector-error{padding-left:0}
+  .bt-connector-head{align-items:flex-start;flex-wrap:wrap}
+  .bt-connector-actions{flex-wrap:wrap}
+  .bt-plugin-tags{max-width:none;justify-content:flex-start}
+}
+@media (max-width:520px){
+  .bt-recipe-input-row{grid-template-columns:minmax(0,1fr)}
+  .bt-recipe-required{min-height:44px}
+  .bt-recipe-remove{width:44px;height:44px}
+}
 
 /* Shell chrome reshaped for the team view. Selectors use stable data attributes where the
    shell offers them and CSS-module name suffixes elsewhere. */

@@ -54,6 +54,10 @@ Bots also have memory. A bot remembers what you like and uses it in later work. 
 
 ![Bot details: model, memory, usage](docs/images/details.png)
 
+### Coding
+
+An ordinary Bot can work through a coding task in its own folder: inspect the Git repository, plan the change, edit files, run tests and checks through the DSH shell, review the real diff, then commit, push and open or update a GitHub pull request when you ask for it. Each Bot chat uses a dedicated coding preset with a persistent PowerShell or bash shell, so its working directory, environment and background jobs survive across tool calls while DSH still owns sandboxing and approval. A Bot can inspect its real execution policy with `execution_status`, isolate risky work with `create_worktree`, and open a conversation branch from an automatic or named checkpoint with `time_travel`. Checkpoints restore conversation history only; files and processes are not rolled back. `repo_status` and `repo_diff` are read-only. `git_commit`, `git_push` and PR changes ask for your approval. The GitHub token stays on the host and is never put in the Bot's shell.
+
 ### Main bot
 
 The main bot is your chief. It has very high rights: it manages the other bots and the group chats. The first time you open DS Bot, there is already a main bot called Chief. Talk to it, and it walks you through the setup.
@@ -70,7 +74,27 @@ Any bot can hand work to another bot with @. That bot does the work on its own, 
 
 ### Capabilities
 
-Settings → **Capabilities** is a shared library of MCP servers, skills and packs. Add a capability to a Bot in its settings; it is available from that Bot's next message in its own chat and group chats. A local MCP command that a Bot adds needs your approval before it can run. While other Bots use a capability, only you or a Main Bot can change or delete it.
+Settings → **Capabilities** is a shared library of MCP servers, skills, packs and parameterized recipes. A skill may be a full `SKILL.md` with routing metadata and DSH invocation policy, or plain instructions. Recipes expand only named inputs into reusable instructions; they do not execute code or grant extra permissions. Add a capability or recipe to a Bot in its settings, and it is available from that Bot's next message in its own chat and group chats. A local MCP command that a Bot adds needs your approval before it can run. While other Bots use a capability or recipe, only you or a Main Bot can change or delete it.
+
+Settings → **Plugins** shows a read-only inventory of the current DSH profile's plugins and bundles. Plugins are profile-wide, so changes affect every Session and Bot. Installation, enablement and removal stay in DSH's own plugin manager.
+
+### Automations
+
+Settings → **Automations** manages durable scheduled tasks and event-triggered prompts. Schedules support one-time delays, absolute times, fixed intervals, daily and weekly wall-clock rules, and five-field cron, with explicit time zones and delivery history. When a long chat moves to a fresh Session, active tasks move with it without arming a second copy.
+
+Event automations can react to completed, failed or stopped turns, approval requests, scheduled deliveries, finished background jobs, and user messages. A rule can filter by source Bot and text, then sends one prompt to a Bot or group. Deduplication, cooldowns, a cascade-depth limit and persisted run records prevent loops and make failures visible. Rules never execute tools directly: the resulting turn keeps the target Bot's normal sandbox, permissions and approvals.
+
+### Integrations
+
+Settings → **Connectors** adds signed inbound integrations for GitHub, Slack and a generic IM webhook. Each connection targets one Bot or group and can filter GitHub events/repositories, Slack events/channels, or IM conversations. Events enter as untrusted user messages, so the target keeps its normal model, capabilities, permissions, sandbox and approvals.
+
+GitHub uses raw-body HMAC with `X-Hub-Signature-256`; Slack verifies its timestamped signature and returns replies in the source thread; the generic IM endpoint uses a timestamped HMAC and an HTTPS outbound webhook. Delivery ids are recorded before work starts, so provider retries do not create duplicate turns. The card shows the endpoint, last delivery and a cleaned error. Public Webhooks need your own TLS reverse proxy or tunnel because dsh Web normally listens on loopback.
+
+### Observability and evaluation
+
+Settings → **Observability** links each Turn to model calls, tools, approvals and Bot handoffs, with latency, Token use, failures and a local OpenTelemetry-style export. It records metadata only: prompts, tool arguments, message text and secrets never enter the trace. Configurable thresholds call out low success rates, slow Turns, tool failures and model errors.
+
+Settings → **Evaluation** runs reusable scenario suites in fresh read-only Sessions. Cases can check text, regular expressions, required or forbidden tools, latency and Token budgets. Team-management and scheduler tools are denied, MCP servers are not mounted, and every temporary Session is archived. Results compare with the previous run so prompt, model, Skill or runtime regressions are visible before release.
 
 ### Usage
 

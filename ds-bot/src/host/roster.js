@@ -37,8 +37,10 @@ export function install(rt) {
   async function botPreset() {
     const presets = ctx.get?.('agentPresets')
     if (presets === undefined) return {}
-    const standard = (await presets.list()).some(preset => preset.id === 'standard' && preset.broken === undefined)
-    return standard ? { agentPreset: 'standard' } : {}
+    const available = await presets.list()
+    const usable = id => available.some(preset => preset.id === id && preset.broken === undefined)
+    if (usable('ds-bot-coding')) return { agentPreset: 'ds-bot-coding' }
+    return usable('standard') ? { agentPreset: 'standard' } : {}
   }
 
   // `dir` is a working folder outside the team workspace. Such a Session is made by cwd
@@ -126,6 +128,7 @@ export function install(rt) {
         createdAt: Date.now(),
         createdBy: createdBy ?? null,
         capabilities: [],
+        recipes: [],
       }
       if (main) state.mainBotIds.push(id)
       const creator = rt.botOf(createdBy)
@@ -469,6 +472,8 @@ export function install(rt) {
     if (room === undefined) throw new Error('Unknown group chat')
     for (const botId of Object.keys(room.sessions ?? {})) rt.dropGroupSession(room, botId)
     delete state.rooms[id]
+    rt.cleanupIntegrationsForTarget?.('room', id)
+    rt.cleanupRoomAutomations?.(id)
     rt.roomInbox.delete(id)
     rt.dropGroupLines(id)
     const failed = await saveForDelete()
@@ -533,6 +538,8 @@ export function install(rt) {
       rt.dropGroupSession(room, id)
       touched.push(room)
     }
+    rt.cleanupIntegrationsForTarget?.('bot', id)
+    rt.cleanupBotAutomations?.(id)
     await followMemberNames(touched)
     await rt.forgetBotSecrets(id)
     await archived

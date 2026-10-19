@@ -8,6 +8,8 @@
 //
 // `--out <file>` writes a normalized transcript (names instead of ids, sorted where the
 // order depends on timing), so two runs, before and after a refactor, can be diffed.
+import { execFileSync } from 'node:child_process'
+import { createHmac } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -205,6 +207,14 @@ await step('user creates Coder, who keeps the default model', () => api('create-
     ?? expect(!Object.values(state().bots).some(entry => 'lab' in entry), 'a Bot still has a lab')
 })
 
+await step('Coder sets persistent shell state', () => send(botNamed('Coder').id, '持久终端 设置'), (_value, calls) => {
+  return expect(saidText(calls, /^持久终端状态已设置/), 'the persistent shell did not accept the marker')
+})
+
+await step('Coder reads persistent shell state in a later call', () => send(botNamed('Coder').id, '持久终端 读取'), (_value, calls) => {
+  return expect(saidText(calls, /^持久终端状态还在/), 'the persistent shell lost its environment')
+})
+
 await step('Chief creates a group', () => send(chief().id, '建群 研发群: Writer, Coder'), () => {
   const room = roomNamed('研发群')
   if (!room) return 'no group 研发群'
@@ -297,6 +307,12 @@ await step('update Writer', () => api('update-bot', { id: botNamed('Writer').id,
 // moves the Bot's own chat on to a fresh part made there; the fresh part then stays put.
 // The native realpath is the one DS Bot saves; on Windows the JS one keeps 8.3 short names.
 const project = realpathSync.native(mkdtempSync(join(tmpdir(), 'ds-bot-smoke-folder-')))
+execFileSync('git', ['init'], { cwd: project, stdio: 'ignore' })
+execFileSync('git', ['config', 'user.name', 'DS Bot Smoke'], { cwd: project, stdio: 'ignore' })
+execFileSync('git', ['config', 'user.email', 'smoke@example.invalid'], { cwd: project, stdio: 'ignore' })
+writeFileSync(join(project, 'README.md'), 'initial\n')
+execFileSync('git', ['add', '--', 'README.md'], { cwd: project, stdio: 'ignore' })
+execFileSync('git', ['commit', '-m', 'initial'], { cwd: project, stdio: 'ignore' })
 const folderOf = sessionId => readdirSync(join(HOME, 'sessions')).find(dir => existsSync(join(HOME, 'sessions', dir, sessionId)))
 const coderParts = () => (botNamed('Coder').segments ?? []).length
 const partsBeforeFolder = coderParts()
@@ -306,13 +322,43 @@ await step('Coder works in a folder of its own', () => api('update-bot', { id: b
     ?? expect(coderParts() === partsBeforeFolder + 1, `Coder has ${coderParts()} earlier parts, not ${partsBeforeFolder + 1}`)
     ?? expect(folderOf(coder.sessionId)?.includes(basename(project)), `Coder's chat is under ${folderOf(coder.sessionId)}`)
 })
+await step('Coder reports its real execution policy', () => send(botNamed('Coder').id, '执行状态'), (_value, calls) => {
+  return expect(saidText(calls, /执行状态：.*Backend: local/), 'execution_status did not report the backend')
+    ?? expect(saidText(calls, /Sandbox mode: workspace-write/), 'execution_status did not report the sandbox mode')
+    ?? expect(saidText(calls, /Sandbox enforcement: (full|partial)/), 'execution_status did not probe enforcement')
+})
+await step('Coder reads repository status through coding tools', () => send(botNamed('Coder').id, '编码状态'), (_value, calls) => {
+  return expect(saidText(calls, /仓库状态：\nRepository:/), 'repo_status did not read the repository')
+})
+writeFileSync(join(project, 'README.md'), 'initial\nchanged\n')
+await step('Coder reviews the unstaged diff through coding tools', () => send(botNamed('Coder').id, '编码差异'), (_value, calls) => {
+  return expect(saidText(calls, /仓库差异：[\s\S]*\+changed/), 'repo_diff did not read the unstaged change')
+})
+await step('Coder creates an isolated worktree', () => send(botNamed('Coder').id, '创建隔离工作区'), (_value, calls) => {
+  return expect(saidText(calls, /工作树已创建：[\s\S]*Branch: smoke-worktree/), 'create_worktree did not create the checkout')
+})
+await step('Coder reads repository status inside the worktree', () => send(botNamed('Coder').id, '编码状态'), (_value, calls) => {
+  return expect(saidText(calls, /仓库状态：\nRepository: .*\.agents[\\/]worktrees[\\/]smoke-worktree/), 'repo_status did not follow the worktree directory')
+})
+await step('Coder lists the repository worktrees', () => send(botNamed('Coder').id, '列出工作树'), (_value, calls) => {
+  return expect(saidText(calls, /工作树列表：[\s\S]*smoke-worktree/), 'list_worktrees did not show the checkout')
+})
 await step('Coder answers from its folder', () => send(botNamed('Coder').id, '你好'), () => expect(coderParts() === partsBeforeFolder + 1, 'Coder moved on again'))
 await step('Coder goes back to the team workspace', () => api('update-bot', { id: botNamed('Coder').id, workDir: '' }), () => {
   const coder = botNamed('Coder')
   return expect(coder.workDir === undefined, 'folder not cleared')
     ?? expect(folderOf(coder.sessionId)?.endsWith('-bot-workspace--'), `Coder's chat is under ${folderOf(coder.sessionId)}`)
 })
-rmSync(project, { recursive: true, force: true })
+await step('Coder releases the persistent shell directory', () => send(botNamed('Coder').id, '编码离开'), (_value, calls) => {
+  return expect(saidText(calls, /^已离开仓库目录/), 'the persistent shell still holds the repository directory')
+})
+try {
+  rmSync(project, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
+} catch (error) {
+  // DSH can still watch a Session folder on Windows after its Agent moves away.
+  if (process.platform !== 'win32' || (error.code !== 'EPERM' && error.code !== 'EBUSY')) throw error
+  console.log(`note: the smoke folder stays until DSH exits: ${project}`)
+}
 
 await step('pin Coder', () => api('set-flags', { id: botNamed('Coder').id, pinned: true }), () => expect(botNamed('Coder').pinned === true, 'not pinned'))
 
@@ -346,7 +392,19 @@ const seesNothing = '工具 无；技能 无'
 const reportOf = (calls, bot) => calls.flatMap(call => call.out ?? []).find(block => block.type === 'text' && block.text.startsWith(`${bot} 能力：`))?.text
 const attach = (bot, name, attached) => api('bot-capability', { botId: bot.id, name, attached })
 await api('capability-save', { name: echoName, kind: 'mcp', description: 'Smoke test echo server', transport: 'stdio', command: process.execPath, args: [echoServer], env: {} })
-await api('capability-save', { name: skillName, kind: 'skill', description: skillDescription, content: 'Use this skill when asked about capability smoke checks.' })
+await api('capability-save', {
+  name: skillName,
+  kind: 'skill',
+  content: [
+    '---',
+    `name: ${skillName}`,
+    `description: ${skillDescription}`,
+    'whenToUse: When checking capability discovery',
+    '---',
+    '',
+    'Use this skill when asked about capability smoke checks.',
+  ].join('\n'),
+})
 await attach(chief(), echoName, true)
 await attach(chief(), skillName, true)
 
@@ -371,6 +429,191 @@ await attach(chief(), skillName, false)
 await step('detached capabilities disappear from Chief', () => send(chief().id, '查能力 smoke'), (_value, calls) => {
   const report = reportOf(calls, 'Chief')
   return expect(report?.endsWith(seesNothing), `Chief reported ${report}`)
+})
+
+await api('recipe-save', {
+  name: 'smoke-recipe',
+  description: 'Smoke test recipe',
+  template: 'Review {{target}} and report one concrete risk.',
+  inputs: [{ name: 'target', description: 'File to review', required: true }],
+})
+await api('bot-recipe', { botId: chief().id, name: 'smoke-recipe', attached: true })
+await step('Chief lists and runs an attached recipe', () => send(chief().id, '列出配方'), (_value, calls) => {
+  return expect(saidText(calls, /配方列表：.*smoke-recipe.*attached to you/), 'recipe_list did not show the attached recipe')
+})
+await step('recipe_run expands parameters without executing code', () => send(chief().id, '运行配方'), (_value, calls) => {
+  return expect(saidText(calls, /配方：<recipe_content name="smoke-recipe".*Review README and report one concrete risk\./), 'recipe_run did not expand the template')
+})
+await step('plugin inventory is readable and profile-scoped', async () => {
+  const inventory = await api('plugin-inventory', { fresh: true })
+  return expect(inventory.scope === 'profile' && inventory.readOnly === true && Array.isArray(inventory.entries),
+    `unexpected plugin inventory ${JSON.stringify(inventory).slice(0, 300)}`)
+})
+
+let smokeSchedule
+await step('a scheduled task can be created, edited and inspected', async () => {
+  const created = await api('schedule-create', {
+    target: chief().id,
+    title: 'Smoke schedule',
+    prompt: 'Check the smoke bench',
+    when: { kind: 'every', seconds: 3600 },
+  })
+  smokeSchedule = created.tasks.find(task => task.title === 'Smoke schedule')
+  if (!smokeSchedule) return 'schedule-create did not return the task'
+  const updated = await api('schedule-update', {
+    sessionId: smokeSchedule.sessionId,
+    id: smokeSchedule.id,
+    expected: smokeSchedule,
+    title: 'Smoke schedule edited',
+    prompt: 'Check the edited smoke bench',
+    when: { kind: 'cron', expression: '0 9 * * *', timeZone: 'UTC' },
+  })
+  const task = updated.tasks.find(item => item.id === smokeSchedule.id)
+  const history = await api('schedule-history', { sessionId: smokeSchedule.sessionId, id: smokeSchedule.id, limit: 5 })
+  return expect(task?.title === 'Smoke schedule edited', `schedule edit returned ${JSON.stringify(task)}`)
+    ?? expect(task?.kind === 'cron' && task.expression === '0 9 * * *', `edited timing is ${JSON.stringify(task)}`)
+    ?? expect(Array.isArray(history.records) && history.records.length === 0, 'new schedule should have no delivery records')
+})
+await step('the scheduled task can be deleted', async () => {
+  const value = await api('schedule-delete', { sessionId: smokeSchedule.sessionId, id: smokeSchedule.id })
+  return expect(!value.tasks.some(task => task.id === smokeSchedule.id), 'deleted schedule is still listed')
+})
+
+let smokeAutomation
+await step('an event automation can be created and listed', async () => {
+  smokeAutomation = await api('automation-save', {
+    name: 'Smoke event',
+    triggerKind: 'user_message',
+    sourceBot: 'Coder',
+    targetKind: 'bot',
+    target: 'Chief',
+    prompt: 'Automation smoke saw: {{text}}',
+    cooldownSeconds: 0,
+    enabled: true,
+  })
+  const value = await api('automations')
+  return expect(value.rules.some(rule => rule.id === smokeAutomation.id && rule.sourceBotName === 'Coder'),
+    `automation is missing from ${JSON.stringify(value).slice(0, 300)}`)
+})
+await step('the event automation wakes its target once', () => send(botNamed('Coder').id, '自动化冒烟'), (_value, calls) => {
+  return expect(calls.some(call => JSON.stringify(call).includes('Automation smoke saw')), 'the target did not receive the automation prompt')
+})
+await step('the event automation can be deleted', async () => {
+  await api('automation-delete', { id: smokeAutomation.id })
+  const value = await api('automations')
+  return expect(!value.rules.some(rule => rule.id === smokeAutomation.id), 'deleted automation is still listed')
+})
+
+let smokeIntegration
+await step('a signed GitHub webhook reaches its target Bot', async () => {
+  smokeIntegration = await api('integration-save', {
+    provider: 'github',
+    name: 'Smoke GitHub',
+    targetKind: 'bot',
+    target: 'Chief',
+    events: 'issues',
+    repos: 'zp-innovation/DeepSeek-Bot',
+    secret: 'smoke-webhook-secret',
+    enabled: true,
+  })
+  const body = JSON.stringify({
+    action: 'opened',
+    repository: { full_name: 'zp-innovation/DeepSeek-Bot' },
+    sender: { login: 'smoke' },
+    issue: { number: 7, title: 'Integration smoke event', html_url: 'https://github.com/zp-innovation/DeepSeek-Bot/issues/7' },
+  })
+  const signature = createHmac('sha256', 'smoke-webhook-secret').update(body).digest('hex')
+  const response = await fetch(`http://127.0.0.1:${port}/api/integrations/github/${smokeIntegration.id}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hub-signature-256': `sha256=${signature}`,
+      'x-github-delivery': 'smoke-delivery-1',
+      'x-github-event': 'issues',
+    },
+    body,
+  })
+  return response.status
+}, status => expect(status === 202, `webhook answered ${status}`))
+await step('the GitHub webhook delivery completes its Bot turn', () => {
+  const item = state().integrations?.items?.[smokeIntegration.id]
+  return item?.lastDelivery?.status
+}, status => expect(status === 'completed', `delivery status is ${status}`))
+await step('the smoke GitHub integration can be deleted', async () => {
+  await api('integration-delete', { id: smokeIntegration.id })
+  return expect(state().integrations?.items?.[smokeIntegration.id] === undefined, 'deleted integration is still listed')
+})
+
+await step('Chief creates a named checkpoint', () => send(chief().id, '创建检查点'), (_value, calls) => {
+  return expect(saidText(calls, /检查点：Checkpoint saved: smoke-checkpoint/), 'checkpoint_create did not save the checkpoint')
+})
+await step('Chief lists its checkpoints', () => send(chief().id, '列出检查点'), (_value, calls) => {
+  return expect(saidText(calls, /检查点列表：.*smoke-checkpoint/), 'checkpoint_list did not show the checkpoint')
+})
+let beforeTimeTravel
+await step('Chief prepares time travel', () => {
+  beforeTimeTravel = chief().sessionId ?? chief().id
+  return send(chief().id, '时间旅行')
+}, (_value, calls) => {
+  return expect(saidText(calls, /时间旅行：Branch prepared from smoke-checkpoint/), 'time_travel did not prepare a branch')
+})
+await step('Chief switches to the time-travel branch', async () => {
+  for (const deadline = Date.now() + 5_000; Date.now() < deadline; await sleep(100)) {
+    const current = chief()
+    const old = (current.segments ?? []).find(segment => segment.sessionId === beforeTimeTravel && segment.reason === 'time-travel')
+    if (current.sessionId !== beforeTimeTravel && old !== undefined) return { switched: true, old: true }
+  }
+  const current = chief()
+  return { switched: current.sessionId !== beforeTimeTravel, old: (current.segments ?? []).some(segment => segment.sessionId === beforeTimeTravel && segment.reason === 'time-travel') }
+}, result => {
+  return expect(result.switched, 'time_travel did not switch the Bot conversation')
+    ?? expect(result.old, 'the old conversation was not kept as the earlier branch')
+})
+await step('Chief answers in the time-travel branch', () => send(chief().id, '你好'), (_value, calls) => {
+  return expect(saidText(calls, /^收到：你好/), 'the time-travel branch did not answer')
+})
+
+await step('observability summarizes real turns, tools and model calls', () => api('observability', { hours: 24 }), value => {
+  return expect(value.summary.turns > 0, `no turns in observability (${JSON.stringify(value.summary)})`)
+    ?? expect(value.summary.toolCalls > 0, 'no tool calls in observability')
+    ?? expect(value.summary.modelCalls > 0, 'no model calls in observability')
+    ?? expect(value.recent.length > 0, 'no recent traces')
+})
+await step('observability exports its trace records', () => api('observability-export'), value => {
+  return expect(value.resource?.service?.name === 'ds-bot', 'wrong export resource')
+    ?? expect(Array.isArray(value.records) && value.records.some(record => record.kind === 'trace'), 'export has no traces')
+})
+
+let smokeEval
+await step('an evaluation suite runs in an isolated Session', async () => {
+  smokeEval = await api('eval-save', {
+    name: 'Smoke evaluation',
+    description: 'Checks one deterministic mock answer',
+    targetBotId: chief().id,
+    cases: [{
+      name: 'Greeting',
+      prompt: '你好',
+      contains: '收到：你好',
+      maxDurationMs: 60_000,
+      maxTokens: 20_000,
+    }],
+  })
+  await api('eval-run', { id: smokeEval.id })
+  for (const deadline = Date.now() + STEP_TIMEOUT_MS; Date.now() < deadline; await sleep(500)) {
+    const view = await api('evaluations')
+    const run = view.runs.find(item => item.suiteId === smokeEval.id)
+    if (run !== undefined && run.status !== 'running') return run
+  }
+  throw new Error('evaluation did not finish')
+}, run => {
+  return expect(run?.status === 'completed', `evaluation ended as ${run?.status}`)
+    ?? expect(run.results?.[0]?.status === 'passed', `case checks: ${JSON.stringify(run?.results?.[0]?.checks)}`)
+    ?? expect(run.results?.[0]?.output?.includes('收到：你好'), 'evaluation answer is missing from its result')
+})
+await step('the evaluation suite can be deleted', async () => {
+  await api('eval-delete', { id: smokeEval.id })
+  const view = await api('evaluations')
+  return expect(!view.suites.some(suite => suite.id === smokeEval.id), 'deleted suite is still listed')
 })
 
 if (outFile) writeFileSync(outFile, `${JSON.stringify(transcript, null, 2)}\n`)

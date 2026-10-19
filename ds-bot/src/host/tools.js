@@ -12,7 +12,8 @@ export const GROUP_REF = { type: 'string', required: true, description: 'Exact g
 const BLOCKING_QUESTION_TOOL = 'ask_user_question'
 // DS Bot carries no goal across conversation parts, so Bot Sessions do not run DSH goals.
 const GOAL_TOOLS = ['create_goal', 'update_goal', 'get_goal']
-const HIDDEN_TOOLS = [BLOCKING_QUESTION_TOOL, ...GOAL_TOOLS]
+const SCHEDULE_TOOLS = ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
+const HIDDEN_TOOLS = [BLOCKING_QUESTION_TOOL, ...GOAL_TOOLS, ...SCHEDULE_TOOLS]
 const GOAL_REFUSAL = 'DS Bot does not run goals. Ask the Bot in a message instead.'
 const MODE_PARAM = {
   type: 'string',
@@ -636,7 +637,10 @@ export function install(rt) {
       const statuses = rt.capabilityStatusesView()[bot.id] ?? {}
       const lines = items.map(item => {
         const extra = item.kind === 'pack' ? `; includes ${(item.items ?? []).join(', ') || 'nothing'}`
-          : item.kind === 'mcp' && item.transport === 'stdio' ? `; ${item.approved ? 'allowed' : 'needs user approval'}` : ''
+          : item.kind === 'mcp' && item.transport === 'stdio' ? `; ${item.approved ? 'allowed' : 'needs user approval'}`
+            : item.kind === 'skill'
+              ? `${item.whenToUse ? `; use when ${item.whenToUse}` : ''}${item.invocation?.userInvocable === false ? '; model only' : item.invocation?.modelInvocable === false ? '; user only' : ''}`
+              : ''
         const itemStatus = statuses[item.name]
         const state = itemStatus ? ` (${itemStatus.state}${itemStatus.error ? `: ${itemStatus.error}` : ''})` : ''
         const status = bot.capabilities?.includes(item.name) ? `; attached to you${state}` : ''
@@ -658,7 +662,18 @@ export function install(rt) {
       env: { type: 'object', additionalProperties: true, description: 'Environment variables for command; write $DSH_SECRET_<NAME> to insert a saved secret instead of the value' },
       url: { type: 'string', description: 'MCP server URL; write $DSH_SECRET_<NAME> in the path or query to insert a saved secret, URL-encoded. Prefer headers for keys' },
       headers: { type: 'object', additionalProperties: true, description: 'HTTP headers; write $DSH_SECRET_<NAME> to insert a saved secret instead of the value' },
-      content: { type: 'string', description: 'Skill instructions' },
+      content: { type: 'string', description: 'Full SKILL.md content with YAML frontmatter, or plain skill instructions' },
+      whenToUse: { type: 'string', description: 'Routing guidance for plain skill instructions; SKILL.md frontmatter takes precedence' },
+      invocation: {
+        type: 'object',
+        properties: {
+          modelInvocable: { type: 'boolean', description: 'Allow the model to discover and load this skill' },
+          userInvocable: { type: 'boolean', description: 'Allow the user to invoke this skill with /name' },
+        },
+        additionalProperties: false,
+        description: 'Invocation policy for plain skill instructions; SKILL.md frontmatter takes precedence',
+      },
+      metadata: { type: 'object', additionalProperties: true, description: 'Optional JSON metadata for plain skill instructions' },
       items: { type: 'array', items: { type: 'string' }, description: 'MCP server and skill names in the pack' },
     },
     output,

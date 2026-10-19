@@ -52,6 +52,9 @@ export function install(rt) {
     // Key names and who may use them; values never leave the host.
     secrets: rt.secretsView(),
     capabilities: rt.capabilityLibraryView(),
+    recipes: rt.recipeLibraryView(),
+    automations: rt.automationView(),
+    integrations: rt.integrationView(),
     secretRequests: state.secretRequests ?? {},
     colors: [...COLORS, ...EXTRA_COLORS],
     models: rt.cachedCatalog(),
@@ -77,10 +80,11 @@ export function install(rt) {
     memoryReviews: rt.memoryReviews(),
     connectors: rt.connectorsView(),
     capabilityStatuses: rt.capabilityStatusesView(),
+    plugins: rt.pluginInventoryView(),
   })
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
-  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer'])
+  const READS = new Set(['state', 'models', 'efforts', 'earlier', 'room-progress', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'schedule-history', 'automations', 'integrations', 'observability', 'observability-trace', 'observability-export', 'evaluations', 'eval-run-detail', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'plugin-inventory'])
 
   function setPrefs(body) {
     if (body.theme !== undefined) {
@@ -112,6 +116,7 @@ export function install(rt) {
           if (readOnly === undefined) await rt.bootstrap()
           await rt.catalog()
           await rt.loadSecrets()
+          await rt.pluginInventory()
           if (body.since === state.revision && (body.models === undefined || body.models === modelsKey())) return ok({ revision: state.revision, unchanged: true, ...live() })
           return ok({ ...view(), ...live() })
         case 'models':
@@ -254,11 +259,51 @@ export function install(rt) {
         case 'bot-capability':
           await rt.load()
           return ok(await rt.capabilityEndpoint(endpoint, body))
+        case 'recipe-save':
+        case 'recipe-delete':
+        case 'bot-recipe':
+          await rt.load()
+          return ok(await rt.recipeEndpoint(endpoint, body))
+        case 'plugin-inventory':
+          return ok(await rt.pluginEndpoint(endpoint, body))
         case 'schedules':
         case 'schedule-create':
+        case 'schedule-update':
         case 'schedule-delete':
+        case 'schedule-history':
           await rt.load()
           return ok(await rt.scheduleEndpoint(endpoint, body))
+        case 'automations':
+          return ok(rt.automationView())
+        case 'automation-save':
+        case 'automation-delete':
+        case 'automation-toggle':
+          await rt.load()
+          return ok(await rt.automationEndpoint(endpoint, body))
+        case 'integrations':
+          return ok(rt.integrationView())
+        case 'integration-save':
+        case 'integration-delete':
+        case 'integration-toggle':
+        case 'integration-test':
+          await rt.load()
+          return ok(await rt.integrationEndpoint(endpoint, body))
+        case 'observability':
+        case 'observability-trace':
+        case 'observability-export':
+        case 'observability-config':
+          await rt.load()
+          return ok(await rt.observabilityEndpoint(endpoint, body))
+        case 'evaluations':
+        case 'eval-run-detail':
+          await rt.load()
+          return ok(await rt.evaluationEndpoint(endpoint, body))
+        case 'eval-save':
+        case 'eval-delete':
+        case 'eval-run':
+        case 'eval-cancel':
+          await rt.load()
+          return ok(await rt.evaluationEndpoint(endpoint, body))
         case 'memory-view':
         case 'memory-ask':
         case 'memory-forget':

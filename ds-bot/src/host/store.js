@@ -11,8 +11,8 @@ import { currentColor, headOf, normalize, unquote } from './text.js'
 export function install(rt) {
   const { ctx, home, statePath } = rt
 
-  /** @type {{version:1, workspaceId?:string, mainBotIds:string[], bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
-  const state = { version: 1, mainBotIds: [], bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, exchanges: [], exchangeTurns: {}, works: {}, questions: {}, prefs: {}, revision: 0 }
+  /** @type {{version:1, workspaceId?:string, mainBotIds:string[], bots:Record<string,any>, rooms:Record<string,any>, agents:Record<string,any>, capabilities:{items:Record<string,any>}, recipes:{items:Record<string,any>}, automations:{items:Record<string,any>,runs:any[]}, scheduleMoves:Record<string,any>, exchanges:any[], exchangeTurns:Record<string,number[]>, revision:number}} */
+  const state = { version: 1, mainBotIds: [], bots: {}, rooms: {}, agents: {}, capabilities: { items: {} }, recipes: { items: {} }, automations: { items: {}, runs: [] }, integrations: { items: {}, deliveries: [] }, evaluations: { suites: {}, runs: [] }, observability: {}, scheduleMoves: {}, exchanges: [], exchangeTurns: {}, works: {}, questions: {}, prefs: {}, revision: 0 }
   let loaded = null
   let writing = Promise.resolve()
   const { warn } = rt
@@ -98,6 +98,12 @@ export function install(rt) {
   // groups whose Session titles still need the new name.
   const adopt = (parsed) => {
     const hadCapabilities = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'capabilities')
+    const hadRecipes = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'recipes')
+    const hadAutomations = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'automations')
+    const hadIntegrations = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'integrations')
+    const hadEvaluations = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'evaluations')
+    const hadObservability = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'observability')
+    const hadScheduleMoves = parsed !== null && parsed !== undefined && Object.hasOwn(parsed, 'scheduleMoves')
     for (const key of Object.keys(state)) delete state[key]
     Object.assign(state, JSON.parse(EMPTY), parsed ?? {})
     state.prefs ??= {}
@@ -111,9 +117,73 @@ export function install(rt) {
       state.capabilities.items = {}
       migrated = true
     }
+    if (state.recipes === null || typeof state.recipes !== 'object' || Array.isArray(state.recipes)) {
+      state.recipes = { items: {} }
+      migrated = true
+    } else if (state.recipes.items === null || typeof state.recipes.items !== 'object' || Array.isArray(state.recipes.items)) {
+      state.recipes.items = {}
+      migrated = true
+    }
+    if (!hadRecipes) migrated = true
+    if (state.automations === null || typeof state.automations !== 'object' || Array.isArray(state.automations)) {
+      state.automations = { items: {}, runs: [] }
+      migrated = true
+    } else {
+      if (state.automations.items === null || typeof state.automations.items !== 'object' || Array.isArray(state.automations.items)) {
+        state.automations.items = {}
+        migrated = true
+      }
+      if (!Array.isArray(state.automations.runs)) {
+        state.automations.runs = []
+        migrated = true
+      }
+    }
+    if (!hadAutomations) migrated = true
+    if (state.integrations === null || typeof state.integrations !== 'object' || Array.isArray(state.integrations)) {
+      state.integrations = { items: {}, deliveries: [] }
+      migrated = true
+    } else {
+      if (state.integrations.items === null || typeof state.integrations.items !== 'object' || Array.isArray(state.integrations.items)) {
+        state.integrations.items = {}
+        migrated = true
+      }
+      if (!Array.isArray(state.integrations.deliveries)) {
+        state.integrations.deliveries = []
+        migrated = true
+      }
+    }
+    if (!hadIntegrations) migrated = true
+    if (state.evaluations === null || typeof state.evaluations !== 'object' || Array.isArray(state.evaluations)) {
+      state.evaluations = { suites: {}, runs: [] }
+      migrated = true
+    } else {
+      if (state.evaluations.suites === null || typeof state.evaluations.suites !== 'object' || Array.isArray(state.evaluations.suites)) {
+        state.evaluations.suites = {}
+        migrated = true
+      }
+      if (!Array.isArray(state.evaluations.runs)) {
+        state.evaluations.runs = []
+        migrated = true
+      }
+    }
+    if (!hadEvaluations) migrated = true
+    if (state.observability === null || typeof state.observability !== 'object' || Array.isArray(state.observability)) {
+      state.observability = {}
+      migrated = true
+    }
+    if (!hadObservability) migrated = true
+    if (state.scheduleMoves === null || typeof state.scheduleMoves !== 'object' || Array.isArray(state.scheduleMoves)) {
+      state.scheduleMoves = {}
+      migrated = true
+    }
+    if (!hadScheduleMoves) migrated = true
     for (const bot of Object.values(state.bots)) {
       if (!Array.isArray(bot.capabilities)) {
         bot.capabilities = []
+        migrated = true
+      }
+      if (!Array.isArray(bot.recipes)) {
+        bot.recipes = []
         migrated = true
       }
       if (bot.color !== currentColor(bot.color)) {

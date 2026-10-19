@@ -24,6 +24,10 @@ import { GROUP_SETTINGS_CSS } from './group-settings.js'
 import { FOLDER_CSS } from './folder-menu.js'
 import { USAGE_CSS } from './usage-page.js'
 import { SCHEDULE_CSS } from './schedules.js'
+import { AUTOMATION_CSS } from './automation-settings.js'
+import { INTEGRATION_CSS } from './integrations.js'
+import { OBSERVABILITY_CSS } from './observability.js'
+import { EVALUATION_CSS } from './evaluation.js'
 import { STORAGE, migrateStorage } from './storage.js'
 import { noteLeft, setUnread, sharedMap, toggleReaction } from './shared-map.js'
 import { freePriority, groupsFor, readMode, surfaceGroups, writeMode } from './surface.js'
@@ -147,6 +151,7 @@ export function apply(ctx) {
     const live = {}
     if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) live.connectors = value.connectors
     if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) live.capabilityStatuses = value.capabilityStatuses
+    if (value.plugins !== undefined && JSON.stringify(value.plugins) !== JSON.stringify(current.plugins ?? {})) live.plugins = value.plugins
     if (Object.keys(live).length > 0 && current.ready) roster.set({ ...current, ...live })
     if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return
     // On a browser with no visit record yet, everything already there counts as seen.
@@ -538,13 +543,37 @@ export function apply(ctx) {
     connectorConnect: (id, token) => after(call('connector-connect', { id, token })),
     connectorDisconnect: id => after(call('connector-disconnect', { id })),
     connectorRetry: id => after(call('connector-retry', { id })),
+    integrationSave: integration => after(call('integration-save', integration)),
+    integrationDelete: id => after(call('integration-delete', { id })),
+    integrationToggle: (id, enabled) => after(call('integration-toggle', { id, enabled })),
+    integrationTest: id => after(call('integration-test', { id })),
+    observability: (payload = {}) => call('observability', payload),
+    observabilityTrace: id => call('observability-trace', { id }),
+    observabilityConfig: config => after(call('observability-config', config)),
+    observabilityExport: () => call('observability-export'),
+    evaluations: () => call('evaluations'),
+    evalSave: suite => after(call('eval-save', suite)),
+    evalDelete: id => after(call('eval-delete', { id })),
+    evalRun: id => after(call('eval-run', { id })),
+    evalRunDetail: id => call('eval-run-detail', { id }),
+    evalCancel: () => after(call('eval-cancel')),
     saveCapability: capability => after(call('capability-save', capability)),
     deleteCapability: name => after(call('capability-delete', { name })),
     approveCapability: name => after(call('capability-approve', { name })),
     setBotCapability: (botId, name, attached) => after(call('bot-capability', { botId, name, attached })),
+    saveRecipe: recipe => after(call('recipe-save', recipe)),
+    deleteRecipe: name => after(call('recipe-delete', { name })),
+    setBotRecipe: (botId, name, attached) => after(call('bot-recipe', { botId, name, attached })),
+    refreshPlugins: () => after(call('plugin-inventory', { fresh: true })),
     schedules: () => call('schedules'),
     scheduleCreate: task => call('schedule-create', task),
+    scheduleUpdate: task => call('schedule-update', task),
     scheduleDelete: (sessionId, id) => call('schedule-delete', { sessionId, id }),
+    scheduleHistory: (sessionId, id, limit = 20) => call('schedule-history', { sessionId, id, limit }),
+    automations: () => call('automations'),
+    automationSave: rule => after(call('automation-save', rule)),
+    automationDelete: id => after(call('automation-delete', { id })),
+    automationToggle: (id, enabled) => after(call('automation-toggle', { id, enabled })),
     exchange: (a, b) => call('exchange', { a, b }).catch(() => []),
     exchangeText: id => call('exchange-text', { id }).catch(() => undefined),
     fileText: file => call('file-text', { file }).catch(() => undefined),
@@ -768,6 +797,10 @@ export function apply(ctx) {
     () => installCompiledStyles(MODEL_CSS + FOLDER_CSS + BOT_SETTINGS_CSS + GROUP_SETTINGS_CSS, 'models'),
     () => installCompiledStyles(USAGE_CSS, 'usage'),
     () => installCompiledStyles(SCHEDULE_CSS, 'schedules'),
+    () => installCompiledStyles(AUTOMATION_CSS, 'automations'),
+    () => installCompiledStyles(INTEGRATION_CSS, 'integrations'),
+    () => installCompiledStyles(OBSERVABILITY_CSS, 'observability'),
+    () => installCompiledStyles(EVALUATION_CSS, 'evaluation'),
     () => installCompiledStyles(FEEDBACK_CSS, 'feedback'),
     () => installCompiledStyles(ABOUT_CSS, 'about'),
     () => installCompiledStyles(MEMBER_CSS, 'members'),

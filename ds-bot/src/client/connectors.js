@@ -1,6 +1,7 @@
-import { createElement as h, useRef, useState } from 'react'
+import { createElement as h, Fragment, useRef, useState } from 'react'
 import { useMorph } from './motion.js'
 import { MaskedInput } from './secret-card.js'
+import { IntegrationsSection } from './integrations.js'
 import { t } from './i18n.js'
 
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
@@ -59,8 +60,10 @@ function ConnectorRow({ connector, actions }) {
 // Settings → Connectors: one row per connector.
 export function ConnectorsPage({ roster, actions }) {
   const list = roster?.connectors ?? []
-  return h('section', { className: 'bt-set-section' },
-    h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
-      ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
-      : list.map(connector => h(ConnectorRow, { key: connector.id, connector, actions }))))
+  return h(Fragment, null,
+    h('section', { className: 'bt-set-section' },
+      h('div', { className: 'bt-set-card bt-connectors-card' }, list.length === 0
+        ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No connectors')))
+        : list.map(connector => h(ConnectorRow, { key: connector.id, connector, actions })))),
+    h(IntegrationsSection, { roster, actions }))
 }

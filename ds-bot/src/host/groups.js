@@ -572,6 +572,10 @@ export function install(rt) {
       for (const post of posts) {
         if (post.reportBack && rt.botOf(post.botId)) void reportRound(room, post, round)
       }
+      if (posts.some(post => post.integration !== undefined)) {
+        void rt.integrationGroupFinished?.(room, round, posts)
+          .catch(error => rt.warn('ds-bot: integration reply for %s failed: %s', room.name, error))
+      }
       exec.concludeTurn?.()
       return JSON.stringify({ replies: round.replies, passed: round.passed, ...(round.failed.length > 0 ? { failed: round.failed } : {}) })
     },

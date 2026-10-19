@@ -154,6 +154,15 @@ test('the guard refuses the blocking question tool in Bot Sessions only', async 
   assert.equal(guard('read', 'writer'), undefined)
 })
 
+test('Bots use DS Bot schedule tools instead of the raw DSH schedule tools', async (t) => {
+  const served = ['read', 'ask_user', QUESTION, 'schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']
+  const { agentFor, hidden, stop } = await setup({ served })
+  t.after(stop)
+  await agentFor('writer')
+  const deny = hidden.find(([sessionId]) => sessionId === 'writer')?.[1] ?? []
+  for (const name of ['schedule_create', 'schedule_list', 'schedule_update', 'schedule_delete']) assert.ok(deny.includes(name), name)
+})
+
 // FeiZhuLulu/DeepSeek-Bot#77: a new Bot told never to use a question tool was opened
 // with "use ask_user", and a model that picked dsh's ask_user_question for it held the
 // Bot until the card was answered, with other Bots' messages queued behind it.

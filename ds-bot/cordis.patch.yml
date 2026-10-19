@@ -17,3 +17,148 @@
   config:
     searchProvider: auto
     fetchProvider: http
+
+# DS Bot owns its coding preset instead of inheriting the user's global
+# "new task" preset. It keeps DSH's standard coding surface and replaces the
+# one-shot shell with an owner-scoped persistent shell for repository work.
+- insert:
+    - id: preset-ds-bot-coding
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: ds-bot-coding
+        name: DS Bot Coding
+        description: Coding-first Bot runtime with persistent shell state, plans, skills and delegation.
+        order: 2
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a senior coding agent powered by the {{model}} model.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: persistent-terminal
+            name: cordis:group
+            group: true
+            isolate:
+              terminals: true
+            config:
+              - id: terminal-registry
+                name: '@deepseek-ai/dsh-terminal'
+              - id: terminal-bash
+                name: '@deepseek-ai/dsh-terminal-bash'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 300000
+              - id: persistent-bash
+                name: '@deepseek-ai/dsh-tool-bash-persistent'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 300000
+                  description: |-
+                    Run commands in a persistent bash shell for this Bot.
+                    State, including cwd, exported variables, functions and background jobs, persists across calls.
+                    Prefer one-shot commands for bounded work. Use the shell for repository inspection, builds, tests, formatters and long-running development processes.
+                    Read the exit status on every result; a non-zero status is not success.
+              - id: terminal-pwsh
+                name: '@deepseek-ai/dsh-terminal-bash'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  shellDialect: pwsh
+                  timeoutMs: 300000
+              - id: persistent-pwsh
+                name: '@deepseek-ai/dsh-tool-pwsh-persistent'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  timeoutMs: 300000
+                  description: |-
+                    Run commands in a persistent PowerShell shell for this Bot.
+                    State, including location, environment variables, functions and background jobs, persists across calls.
+                    Prefer one-shot commands for bounded work. Use the shell for repository inspection, builds, tests, formatters and long-running development processes.
+                    Use native Windows paths and $env:NAME variables. Read the exit status on every result; a non-zero status is not success.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |-
+                    You are in plan mode. Explore the repository first with non-mutating reads and checks. Do not edit files, run write commands, commit, push, or change configuration until exit_plan_mode succeeds or the user switches modes.
+                    Make the plan concrete: goal, affected files and subsystems, public contracts, migration and compatibility risks, tests, acceptance criteria, and explicit assumptions.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+                  backgroundMode: continuable
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+                  backgroundMode: continuable
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'

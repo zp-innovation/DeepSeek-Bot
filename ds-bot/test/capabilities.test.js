@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { expandCapabilityNames, validateCapabilityName } from '../src/host/capabilities.js'
+import { expandCapabilityNames, parseSkillDefinition, validateCapabilityName } from '../src/host/capabilities.js'
 import { fakeContext } from './fake-ctx.js'
 
 const makeHome = state => {
@@ -101,6 +101,44 @@ test('packs expand only to MCP and skill items', () => {
   assert.throws(() => expandCapabilityNames(['bad'], { ...items, bad: { kind: 'pack', items: ['team'] } }), /unavailable capability/)
 })
 
+test('SKILL.md frontmatter supplies routing, invocation and metadata', () => {
+  const parsed = parseSkillDefinition({
+    name: 'review-code',
+    content: [
+      '---',
+      'name: review-code',
+      'description: Review code changes',
+      'whenToUse: Before merging a risky change',
+      'disable-model-invocation: off',
+      'user-invocable: no',
+      'metadata:',
+      '  owner: platform',
+      '---',
+      '',
+      'Read the diff and report findings.',
+    ].join('\r\n'),
+  })
+  assert.deepEqual(parsed, {
+    content: 'Read the diff and report findings.',
+    description: 'Review code changes',
+    whenToUse: 'Before merging a risky change',
+    invocation: { modelInvocable: true, userInvocable: false },
+    metadata: { owner: 'platform' },
+  })
+  assert.throws(() => parseSkillDefinition({
+    name: 'other',
+    content: '---\nname: review-code\ndescription: Review\n---\nBody',
+  }), /must match capability name/)
+  assert.throws(() => parseSkillDefinition({
+    name: 'review-code',
+    content: '---\nname: review-code\ndescription: Review\nuser-invocable: maybe\n---\nBody',
+  }), /must be a boolean/)
+  assert.throws(() => parseSkillDefinition({
+    name: 'review-code',
+    content: '---\nname: review-code\ndescription: Review\n---\n',
+  }), /needs instructions/)
+})
+
 test('state migration adds an empty library and Bot attachment lists', async t => {
   const old = team()
   delete old.capabilities
@@ -165,7 +203,7 @@ test('capability tool descriptions and attach results explain approval', async t
       env: 'Environment variables for command; write $DSH_SECRET_<NAME> to insert a saved secret instead of the value',
       url: 'MCP server URL; write $DSH_SECRET_<NAME> in the path or query to insert a saved secret, URL-encoded. Prefer headers for keys',
       headers: 'HTTP headers; write $DSH_SECRET_<NAME> to insert a saved secret instead of the value',
-      content: 'Skill instructions',
+      content: 'Full SKILL.md content with YAML frontmatter, or plain skill instructions',
     },
   )
   await env.rt.capabilitySave(mcp('blocked'), { botId: 'worker' })
@@ -370,6 +408,42 @@ test('unset capability statuses are omitted from the view and tool listing', asy
   const listed = await ctx.registeredTools.get('list_capabilities').execute({}, { agent: { id: 'chief' } })
   assert.match(listed, /echo \(mcp\).*; attached to you(?:\n|$)/)
   assert.doesNotMatch(listed, /attached to you \(connecting\)/)
+})
+
+test('a saved SKILL.md registers its policy and routing metadata', async t => {
+  const env = await setup()
+  t.after(() => env.dispose())
+  const { ctx, rt, mounts, skills } = env
+  await rt.capabilitySave({
+    name: 'review-code',
+    kind: 'skill',
+    content: [
+      '---',
+      'name: review-code',
+      'description: Review code changes',
+      'whenToUse: Before merging a risky change',
+      'user-invocable: false',
+      'metadata:',
+      '  owner: platform',
+      '---',
+      '',
+      'Read the diff and report findings.',
+    ].join('\n'),
+  }, { botId: 'chief' })
+  await rt.changeCapabilityAttachment('attach', { name: 'review-code' }, 'chief')
+  const agent = testAgent('chief', mounts, skills)
+  ctx.emit('agent/created', { agent })
+  await rt.scheduleCapabilitiesReconcile()
+  assert.deepEqual(skills.get('chief').get('review-code'), {
+    name: 'review-code',
+    description: 'Review code changes',
+    source: 'runtime',
+    provider: 'ds-bot-shared',
+    content: 'Read the diff and report findings.',
+    invocation: { modelInvocable: true, userInvocable: false },
+    whenToUse: 'Before merging a risky change',
+    metadata: { owner: 'platform' },
+  })
 })
 
 test('mounts agent-only MCP and skills, remounts changed config, resolves scoped secrets and reports missing secrets', async t => {

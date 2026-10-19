@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -21,6 +21,12 @@ const TEAM = {
   exchangeTurns: {},
   questions: {},
 }
+
+test('the DS Bot Coding preset uses only prompt variables DSH registers', () => {
+  const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  const variables = [...patch.matchAll(/\{\{([^{}]+)\}\}/g)].map(match => match[1])
+  assert.deepEqual([...new Set(variables)].sort(), ['model'])
+})
 
 function start({ presets } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-agent-preset-'))
@@ -69,8 +75,22 @@ const relayCall = async (relay, tools) => {
   return chunks.find(chunk => chunk.type === 'block-end').block
 }
 
-test('a new Bot Session is made with the standard preset when DSH serves it', async (t) => {
-  const { rt, created, stop } = start({ presets: [{ id: 'ptc' }, { id: 'standard' }] })
+test('a new Bot Session prefers DS Bot Coding and falls back to the standard preset', async (t) => {
+  const coding = start({ presets: [{ id: 'ptc' }, { id: 'standard' }, { id: 'ds-bot-coding' }] })
+  t.after(coding.stop)
+  await coding.rt.load()
+  await coding.rt.createSession('Chief')
+  assert.deepEqual(coding.created, [{ workspaceId: 'w1', agentPreset: 'ds-bot-coding' }])
+
+  const standard = start({ presets: [{ id: 'ptc' }, { id: 'standard' }] })
+  t.after(standard.stop)
+  await standard.rt.load()
+  await standard.rt.createSession('Chief')
+  assert.deepEqual(standard.created, [{ workspaceId: 'w1', agentPreset: 'standard' }])
+})
+
+test('a broken DS Bot Coding preset falls back to standard', async (t) => {
+  const { rt, created, stop } = start({ presets: [{ id: 'ds-bot-coding', broken: 'failed to start' }, { id: 'standard' }] })
   t.after(stop)
   await rt.load()
   await rt.createSession('Chief')

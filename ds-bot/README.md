@@ -25,11 +25,13 @@ Tested with dsh `0.2.0-rc.2` (Web and Desktop) on Linux.
 - **Long chats stay inside the model's window**: dsh's own compaction never runs on a Bot's Session. When a turn ends past the check line (a share of the model's context window), a small separate model call, the context steward, reads the latest messages of the chat and decides once. If the work is still under way, the chat is condensed in place into a checkpoint: a handoff summary plus your recent messages word for word. If the work has reached a stopping point, the Bot writes a handoff note and continues in a new part. Either way you still see one chat, with no marker. Earlier parts and condensed messages stay searchable in a full-text index (`node:sqlite` FTS5) through `read_own_chat`.
 - **Memory**: each Bot keeps notes across all its conversations, and the team shares one more. See [Memory](#memory).
 - **Web search**: see [Web search](#web-search).
+- **Inbound integrations**: signed GitHub, Slack and generic IM events can enter a Bot or group chat, and Bot replies can return to Slack threads or an IM conversation. See [Integrations](#integrations).
+- **Observability and evaluation**: local Turn/model/tool/approval traces, health thresholds, JSON export, and isolated scenario suites with pass/fail, token, latency and regression checks. See [Observability and evaluation](#observability-and-evaluation).
 - **Bot browser (dsh Desktop only)**: see [Bot browser](#bot-browser).
 - **Images**: for a model that cannot read images, a vision model first turns the image into text.
 - **Secrets**: a Bot asks for an API key or token with a card in its own chat and never sees the value. See [Secrets](#secrets).
 - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
-- **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
+- **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities (MCP servers, full `SKILL.md`, packs and recipes), Plugins (read-only profile inventory), Automations (durable schedules and event-triggered prompts), Observability, Evaluation, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
 
 ## Install
 
@@ -75,6 +77,7 @@ Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of th
     updateCheck: true               # look for a newer DS Bot when a window opens; default true
     updateRegistry: https://registry.example/   # ask only this npm registry for updates
     github: false                   # hide the GitHub connector; default shown in Connectors
+    integrations: false             # hide inbound webhook integrations; default shown
 ```
 
 **Updates**: when a window opens, DS Bot asks where it was installed from for a newer release: the npm registry (the one the DSH plugin manager installs from, then its fallbacks), or the latest GitHub release for a `github:…#vX.Y.Z` install. A newer version shows a cloud button at the top right of the sidebar; **Update** reinstalls DS Bot through the DSH plugin manager, and the new version runs from the next DSH start. A linked or local checkout is never offered an update. Settings → About DS Bot shows the same state, with **Check for updates** to ask again at once.
@@ -138,6 +141,72 @@ Each result starts with a `Search backend: …` line that names the path it took
 
 Another plugin can also set the search provider while dsh runs, after the profile patch. When you turn such a plugin off, check this setting again.
 
+## Integrations
+
+Settings → **Connectors** keeps the outbound GitHub MCP connection and adds inbound integrations for GitHub, Slack and a generic IM webhook. An integration chooses one target: a Bot's private chat or a group chat. Inbound events become ordinary user messages, so the target still uses its normal model, capabilities, permission preset, sandbox and approvals.
+
+| Provider | Inbound signature | Reply |
+|---|---|---|
+| GitHub | `X-Hub-Signature-256` HMAC over the raw body | No automatic GitHub write; use the existing GitHub tools |
+| Slack | `v0:{timestamp}:{rawBody}` HMAC, 5-minute window | `chat.postMessage`, preserving the source thread |
+| IM | `X-DS-Bot-Signature` HMAC over `{timestamp}.{rawBody}` | HTTPS JSON webhook with optional bearer token |
+
+Each connection gets an unguessable path:
+
+```text
+/api/integrations/github/<id>
+/api/integrations/slack/<id>
+/api/integrations/im/<id>
+```
+
+dsh Web normally listens on loopback. To receive public Webhooks, put the dsh Web server behind your own TLS reverse proxy or tunnel; DS Bot does not open another listener.
+
+GitHub and Slack can be filtered by event and, respectively, repository or channel. The connection card shows the last delivery status and a cleaned error. Delivery ids are stored before the Bot receives the event, so retries do not create a second turn. The receipt says the event was accepted, not that the model has finished. If dsh stops after accepting an event but before the reply, the receipt becomes `failed` after restart and is not replayed automatically.
+
+The generic IM inbound JSON is:
+
+```json
+{
+  "id": "message-123",
+  "conversationId": "channel-or-thread",
+  "threadId": "optional-thread",
+  "user": { "id": "u1", "name": "Ada" },
+  "text": "Summarize the incident"
+}
+```
+
+Send these headers:
+
+```text
+Content-Type: application/json
+X-DS-Bot-Timestamp: 1760000000
+X-DS-Bot-Signature: sha256=<hex HMAC>
+X-DS-Bot-Delivery: message-123
+```
+
+The signing input is `<timestamp>.<raw request body>`. Secrets stay in `secrets.json` and are not offered to Bot shells. Webhook payloads, signatures and tokens are not written to logs. Bots can list visible integrations with the read-only `integration_list` tool; changing or testing a connection stays in the settings page.
+
+## Observability and evaluation
+
+Settings → **Observability** shows recent Turns without storing prompts or tool arguments. Each trace links a Turn to model requests, tool calls, approvals and Bot/handoff/integration/automation deliveries. It records duration, status, Token counts, tool failures and a cleaned error; the JSONL source is `<home>/observability.jsonl`.
+
+- Ranges: 24 hours, 7 days or 30 days, optionally filtered to one Bot.
+- Health: success rate, p50/p95 Turn time, tool failure rate, model error rate, Token use and per-Bot trends.
+- Thresholds: default warnings at <90% Turn success, >20% tool failures, >120 s Turn p95, or >10% model errors. You can change them in Settings.
+- Privacy: messages, prompts, tool arguments/results, approval text, Webhook payloads and secrets are never written. Only source metadata, sizes, timing, status and redacted errors are kept.
+- Export: **Export JSON** downloads trace/span records using OpenTelemetry-style GenAI attribute names.
+- The read-only `observability_overview` tool gives a Main Bot the same health summary.
+
+Settings → **Evaluation** runs reusable scenario suites against one Bot:
+
+- A case checks the answer with contains/not-contains, regular expressions, required/forbidden tools, maximum duration and maximum Tokens.
+- Every case gets a fresh Session using the target Bot's model, thinking level, identity and Skill files.
+- Evaluation Sessions are read-only. Team-management, secret, schedule, goal and blocking-question tools are denied; MCP servers are not mounted.
+- The temporary Session is archived after the case, so evaluation does not add messages to the Bot's real chat or memory.
+- Runs show per-check evidence, Token use, latency, output excerpt and comparison with the previous completed run, including regressions and improvements.
+- Evaluation consumes real model Tokens. Only one suite runs at a time; a run interrupted by restart is marked `interrupted` and is not retried automatically.
+- Main Bots can read suite names and recent pass rates with `eval_list`; configuration and running stay in Settings.
+
 ## Bot browser
 
 In dsh Desktop, a Bot's chat header has a globe button. It opens that Bot's own browser panel.
@@ -194,6 +263,7 @@ Files in `bot/`:
 | `state.lock` | The dsh that is using this data (pid and host). It is removed when that dsh exits. |
 | `chat-index.sqlite` | Full-text index of older chat parts (`read_own_chat`); rebuilt if deleted |
 | `usage.sqlite` | Token counts for the Usage page; rebuilt from the Session logs if deleted, losing only the calls outside the logs and the names of deleted Bots |
+| `observability.jsonl` | Local Turn/model/tool/approval trace metadata. Rotates at about 8 MB; never contains prompts, tool arguments or secrets. Safe to delete. |
 | `memory/` | Memory (see [Memory](#memory)): `bots/<id>/` and `team/` (`MEMORY.md` and topics), `journal.jsonl` (every change), `snapshots/` (the section each Session froze), `summaries/` (the panel's summary; safe to delete), `reviewed.json` (how far the memory review has read) and `archive/` (deleted Bots) |
 | `ocr.json` | Cache of image text; safe to delete |
 | `workspace` | The team workspace: the working folder of every Bot without one of its own (`config.workspace` changes it) |

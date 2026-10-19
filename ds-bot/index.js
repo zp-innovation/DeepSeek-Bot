@@ -15,18 +15,27 @@ import * as agents from './src/host/agents.js'
 import * as prompt from './src/host/prompt.js'
 import * as timeContext from './src/host/time-context.js'
 import * as tools from './src/host/tools.js'
+import * as observability from './src/host/observability.js'
+import * as execution from './src/host/execution.js'
+import * as coding from './src/host/coding.js'
 import * as chatIndex from './src/host/chat-index.js'
 import * as groups from './src/host/groups.js'
 import * as approvals from './src/host/approvals.js'
 import * as resume from './src/host/resume.js'
 import * as memory from './src/host/memory.js'
 import * as parts from './src/host/parts.js'
+import * as checkpoints from './src/host/checkpoints.js'
 import * as images from './src/host/images.js'
 import * as browser from './src/host/browser.js'
 import * as secrets from './src/host/secrets.js'
 import * as connectors from './src/host/connectors.js'
+import * as integrations from './src/host/integrations.js'
 import * as capabilities from './src/host/capabilities.js'
+import * as evaluation from './src/host/evaluation.js'
+import * as recipes from './src/host/recipes.js'
+import * as plugins from './src/host/plugins.js'
 import * as schedules from './src/host/schedules.js'
+import * as automations from './src/host/automations.js'
 import * as usage from './src/host/usage.js'
 import * as update from './src/host/update.js'
 import * as dshUpdate from './src/host/dsh-update.js'
@@ -41,7 +50,7 @@ export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'ses
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, models, permissions, turns, handoffs, delivery, roster, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, channel]
+const MODULES = [diagnostics, store, models, permissions, turns, handoffs, delivery, roster, folders, agents, prompt, timeContext, tools, observability, execution, coding, chatIndex, groups, approvals, resume, memory, parts, checkpoints, images, secrets, connectors, integrations, capabilities, evaluation, recipes, plugins, schedules, automations, browser, usage, update, dshUpdate, channel]
 
 export function apply(ctx, config = {}) {
   createRuntime(ctx, config)
